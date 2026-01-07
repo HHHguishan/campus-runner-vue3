@@ -55,6 +55,7 @@
 import { ref, onMounted } from 'vue'
 import { Money, InfoFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import { getSysConfig, updateSysConfig } from '@/api/system'
 
 const loading = ref(false)
 // 对应 ConfigUpdateDTO 和 SysConfig 实体
@@ -66,38 +67,79 @@ const configForm = ref({
 })
 
 const fetchData = async () => {
-  // 模拟 GET /api/admin/sys-config
-  // 实际开发中应调用后端获取当前配置
+  try {
+    const res = await getSysConfig()
+    const data = res.data
+    
+    if (Array.isArray(data)) {
+      // Handle list response: [{ paramKey: 'base_price', paramValue: '5.0' }, ...]
+      data.forEach(item => {
+        const key = item.paramKey || item.key
+        const val = item.paramValue || item.value
+        
+        if (key === 'base_price') configForm.value.base_price = Number(val)
+        if (key === 'per_km_price') configForm.value.per_km_price = Number(val)
+        if (key === 'weather_rate') configForm.value.weather_rate = Number(val)
+        if (key === 'platform_rate') configForm.value.platform_rate = Number(val) * 100
+      })
+    }
+  } catch (error) {
+    console.error('获取配置失败', error)
+  }
 }
 
 const handleSave = async () => {
   loading.value = true
   try {
-    // 模拟 POST /api/admin/sys-config
-    // 转换数据格式（如果后端需要小数）
-    const payload = {
-        ...configForm.value,
-        platform_rate: configForm.value.platform_rate / 100
+    // 后端接口只支持单条更新，需要遍历提交
+    // 映射表：前端字段 -> 后端 paramKey
+    const fieldMap = {
+      base_price: 'base_price',
+      per_km_price: 'per_km_price',
+      weather_rate: 'weather_rate',
+      platform_rate: 'platform_rate'
     }
-    console.log('提交参数:', payload)
+
+    const promises = Object.keys(fieldMap).map(field => {
+      let value = configForm.value[field]
+      // 特殊处理百分比
+      if (field === 'platform_rate') {
+        value = value / 100
+      }
+      
+      const payload = {
+        paramKey: fieldMap[field],
+        paramValue: value.toString(),
+        remark: getRemark(field)
+      }
+      return updateSysConfig(payload)
+    })
+
+    await Promise.all(promises)
     
-    setTimeout(() => {
-        loading.value = false
-        ElMessage.success('系统配置已更新')
-    }, 800)
+    ElMessage.success('系统配置已更新')
+    loading.value = false
+    // 刷新数据以确保同步
+    fetchData()
   } catch (error) {
+    console.error(error)
     loading.value = false
   }
 }
 
-const resetConfig = () => {
-  configForm.value = {
-      base_price: 5.0,
-      per_km_price: 2.0,
-      weather_rate: 0.0,
-      platform_rate: 10.0
+const getRemark = (field) => {
+  const map = {
+    base_price: '起步价(元)',
+    per_km_price: '每公里加价(元)',
+    weather_rate: '恶劣天气加价(元)',
+    platform_rate: '平台抽成比例(0-1)'
   }
-  ElMessage.info('已重置为默认值')
+  return map[field] || ''
+}
+
+const resetConfig = () => {
+  fetchData() // 重新从后端获取最新值
+  ElMessage.info('已重置为服务器端配置')
 }
 
 onMounted(() => {

@@ -84,12 +84,23 @@
           <el-form-item label="标题" prop="title">
               <el-input v-model="form.title" placeholder="请输入标题" />
           </el-form-item>
-          <el-form-item label="内容" prop="content" v-if="form.type === 1">
+          <el-form-item label="内容" prop="content">
               <el-input v-model="form.content" type="textarea" :rows="4" placeholder="请输入公告详细内容" />
           </el-form-item>
-          <el-form-item label="图片URL" prop="imgUrl">
-              <el-input v-model="form.imgUrl" placeholder="输入图片链接或后续对接上传" />
-              <!-- 这里实际项目中应使用上传组件 -->
+          <el-form-item label="图片" prop="imgUrl">
+              <el-upload
+                class="avatar-uploader"
+                action="#"
+                :http-request="handleUpload"
+                :show-file-list="false"
+                accept=".jpg,.jpeg,.png,.gif"
+              >
+                <img v-if="form.imgUrl" :src="form.imgUrl" class="avatar" />
+                <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+              </el-upload>
+              <div class="el-upload__tip" style="color: rgba(255,255,255,0.5); margin-left: 10px;">
+                  点击上传，支持 jpg/png 格式
+              </div>
           </el-form-item>
           <el-form-item label="排序" prop="sort">
               <el-input-number v-model="form.sort" :min="0" :max="999" />
@@ -112,6 +123,8 @@
 import { ref, onMounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getNoticePage, addNotice, updateNotice, deleteNotice, updateNoticeStatus } from '@/api/system'
+import { uploadFile } from '@/api/common'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -133,6 +146,23 @@ const form = ref({
     status: 1
 })
 
+const handleUpload = async (options) => {
+  try {
+    const res = await uploadFile(options.file)
+    // 假设后端返回格式为 { code: 200, data: 'http://...' } 或 { code: 200, data: { url: 'http://...' } }
+    const url = res.data?.url || res.data
+    if (url) {
+        form.value.imgUrl = url
+        ElMessage.success('上传成功')
+    } else {
+        ElMessage.error('上传返回值异常')
+    }
+  } catch (error) {
+    console.error(error)
+    // 拦截器通常会处理错误显示，这里可以不再重复
+  }
+}
+
 const rules = {
     title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
     type: [{ required: true, message: '请选择类型', trigger: 'change' }]
@@ -140,22 +170,20 @@ const rules = {
 
 const fetchData = async () => {
   loading.value = true
-  // Mock data
-  setTimeout(() => {
-    let mockList = [
-        { id: 1, title: '春节期间配送费调整通知', content: '春节期间每单加价3元...', imgUrl: '', type: 1, sort: 10, status: 1, createTime: '2026-01-05 10:00:00' },
-        { id: 2, title: '新用户注册立减活动', content: '', imgUrl: 'https://via.placeholder.com/300x150?text=Banner', type: 2, sort: 1, status: 1, createTime: '2026-01-06 12:00:00' }
-    ]
-    
-    // 简单模拟筛选
-    if (activeType.value !== '0') {
-        mockList = mockList.filter(item => item.type === parseInt(activeType.value))
+  try {
+    const params = {
+      page: currentPage.value,
+      size: pageSize,
+      type: activeType.value !== '0' ? activeType.value : undefined
     }
-    
-    tableData.value = mockList
-    total.value = mockList.length
+    const res = await getNoticePage(params)
+    tableData.value = res.data.records || []
+    total.value = res.data.total || 0
+  } catch (error) {
+    console.error(error)
+  } finally {
     loading.value = false
-  }, 500)
+  }
 }
 
 const handleAdd = () => {
@@ -171,25 +199,44 @@ const handleEdit = (row) => {
 const handleDelete = (row) => {
     ElMessageBox.confirm('确定要删除这条记录吗？', '提示', {
         type: 'warning'
-    }).then(() => {
-        ElMessage.success('删除成功')
-        fetchData()
+    }).then(async () => {
+        try {
+            await deleteNotice(row.id)
+            ElMessage.success('删除成功')
+            fetchData()
+        } catch (error) {
+            // Error handled by interceptor
+        }
     })
 }
 
-const handleStatusChange = (row) => {
-    ElMessage.success(`状态已更新为: ${row.status === 1 ? '显示' : '隐藏'}`)
-    // 实际需调用 API: POST /api/admin/notice/update
+const handleStatusChange = async (row) => {
+    try {
+        await updateNoticeStatus(row.id, row.status)
+        ElMessage.success(`状态已更新为: ${row.status === 1 ? '显示' : '隐藏'}`)
+    } catch (error) {
+        // Revert status on error
+        row.status = row.status === 1 ? 0 : 1
+    }
 }
 
 const handleSubmit = async () => {
     if (!formRef.value) return
-    await formRef.value.validate((valid) => {
+    await formRef.value.validate(async (valid) => {
         if (valid) {
-            // 实际需调用 API: POST /api/admin/notice/create 或 update
-            ElMessage.success(form.value.id ? '更新成功' : '发布成功')
-            dialogVisible.value = false
-            fetchData()
+            try {
+                if (form.value.id) {
+                    await updateNotice(form.value)
+                    ElMessage.success('更新成功')
+                } else {
+                    await addNotice(form.value)
+                    ElMessage.success('发布成功')
+                }
+                dialogVisible.value = false
+                fetchData()
+            } catch (error) {
+                // Error handled by interceptor
+            }
         }
     })
 }
@@ -227,5 +274,37 @@ onMounted(() => {
 :deep(.el-tabs__item) {
     color: rgba(255,255,255,0.7);
     &.is-active { color: #409EFF; }
+}
+
+.avatar-uploader .el-upload {
+  border: 1px dashed rgba(255, 255, 255, 0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.avatar-uploader .el-upload:hover {
+  border-color: #409EFF;
+}
+
+.avatar-uploader-icon {
+  font-size: 28px;
+  color: #8c939d;
+  width: 120px;
+  height: 120px;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.avatar {
+  width: 120px;
+  height: 120px;
+  display: block;
+  object-fit: cover;
 }
 </style>
