@@ -7,18 +7,19 @@
       </div>
       
       <el-table :data="tableData" v-loading="loading" style="width: 100%; background: transparent;">
-        <el-table-column prop="tradeNo" label="交易流水号" width="200" />
-        <el-table-column prop="realName" label="骑手姓名" />
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="realName" label="用户姓名" />
         <el-table-column prop="amount" label="提现金额">
           <template #default="scope">
             <span style="color: #67c23a; font-weight: bold;">¥ {{ scope.row.amount }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="alipayAccount" label="支付宝账号" />
-        <el-table-column prop="createTime" label="申请时间" />
+        <el-table-column prop="accountNo" label="收款账号" />
+        <!-- 后端暂时未返回 createTime，如需要展示可联系后端补充，或者暂不展示 -->
+        <!-- <el-table-column prop="createTime" label="申请时间" width="180" /> -->
         <el-table-column prop="status" label="状态">
           <template #default="scope">
-            <el-tag v-if="scope.row.status === 0" type="warning">待审核</el-tag>
+            <el-tag v-if="scope.row.status === 0" type="warning">审核中</el-tag>
             <el-tag v-else-if="scope.row.status === 1" type="success">已打款</el-tag>
             <el-tag v-else type="danger">已驳回</el-tag>
           </template>
@@ -26,10 +27,12 @@
         <el-table-column label="操作" width="200">
           <template #default="scope">
             <div v-if="scope.row.status === 0">
-              <el-button type="success" size="small" @click="handleApprove(scope.row)">打款</el-button>
-              <el-button type="danger" size="small" @click="handleReject(scope.row)">驳回</el-button>
+              <el-button type="success" size="small" @click="handleAudit(scope.row, 1)">通过</el-button>
+              <el-button type="danger" size="small" @click="handleAudit(scope.row, 2)">驳回</el-button>
             </div>
-            <span v-else style="color: #909399; font-size: 0.8rem;">已处理</span>
+            <span v-else style="color: #909399; font-size: 0.8rem;">
+              {{ scope.row.statusDesc }}
+            </span>
           </template>
         </el-table-column>
       </el-table>
@@ -51,7 +54,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
-import request from '@/utils/request'
+import { getWithdrawList, auditWithdraw } from '@/api/finance'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const loading = ref(false)
@@ -63,50 +66,71 @@ const pageSize = 10
 const fetchData = async () => {
   loading.value = true
   try {
-    // 模拟数据 - 实际应调用后端 API
-    // const res = await request.get('/api/admin/finance/withdrawals', { params: { page: currentPage.value, size: pageSize } })
-    // tableData.value = res.data.records
-    // total.value = res.data.total
+    // 后端分页参数为 current, size
+    const res = await getWithdrawList({
+      current: currentPage.value,
+      size: pageSize
+    })
     
-    // 临时 Mock 数据演示
-    setTimeout(() => {
-        tableData.value = [
-            { id: 1, tradeNo: 'W202310240001', realName: '张三', amount: '100.00', alipayAccount: '13800138000', createTime: '2023-10-24 10:00:00', status: 0 },
-            { id: 2, tradeNo: 'W202310240002', realName: '李四', amount: '50.00', alipayAccount: '13900139000', createTime: '2023-10-24 11:30:00', status: 1 },
-        ]
-        total.value = 2
-        loading.value = false
-    }, 500)
+    // 根据提供的响应结构: { code: 200, data: { records: [...], total: ... } }
+    // request.js 拦截器通常会返回 res.data (或者直接返回 res 如果配置了)
+    // 这里假设 request.js 返回的是 response.data 的内容
     
+    // 如果拦截器直接解包了 data，那么 res 就是 { records: ..., total: ... }
+    // 如果拦截器只解包了 http status，那么 res 可能是 { code: 200, data: { ... } }
+    
+    const data = res.records ? res : (res.data || {})
+    
+    if (data.records) {
+        tableData.value = data.records
+        total.value = data.total
+    } else {
+        tableData.value = []
+        total.value = 0
+    }
   } catch (error) {
-    console.error(error)
+    console.error('获取提现列表失败:', error)
+  } finally {
     loading.value = false
   }
 }
 
-const handleApprove = (row) => {
-  ElMessageBox.confirm(`确定向骑手 ${row.realName} 转账 ¥ ${row.amount} 吗？`, '打款确认', {
-    confirmButtonText: '确定打款',
-    cancelButtonText: '取消',
-    type: 'warning'
-  }).then(async () => {
-    // await request.post('/api/admin/finance/approve', { id: row.id })
-    ElMessage.success('打款成功 (演示)')
-    row.status = 1 // 仅演示更新状态
-    // fetchData()
-  })
+const handleAudit = (row, status) => {
+  const actionText = status === 1 ? '通过' : '驳回'
+  const isReject = status === 2
+  
+  if (isReject) {
+      ElMessageBox.prompt('请输入驳回原因', '驳回申请', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        inputPattern: /\S+/,
+        inputErrorMessage: '驳回原因不能为空'
+      }).then(async ({ value }) => {
+        submitAudit(row, status, value)
+      })
+  } else {
+      ElMessageBox.confirm(`确定${actionText}该提现申请吗？`, '审核确认', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }).then(() => {
+        submitAudit(row, status)
+      })
+  }
 }
 
-const handleReject = (row) => {
-  ElMessageBox.prompt('请输入驳回原因', '驳回申请', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消'
-  }).then(async ({ value }) => {
-    // await request.post('/api/admin/finance/reject', { id: row.id, reason: value })
-    ElMessage.success('已驳回 (演示)')
-    row.status = 2 // 仅演示更新状态
-    // fetchData()
-  })
+const submitAudit = async (row, status, remark = '') => {
+    try {
+        await auditWithdraw({ 
+            id: row.id, 
+            status: status,
+            remark: remark 
+        })
+        ElMessage.success('操作成功')
+        fetchData() // 刷新列表
+    } catch (error) {
+        console.error(error)
+    }
 }
 
 onMounted(() => {
