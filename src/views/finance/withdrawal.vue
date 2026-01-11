@@ -121,15 +121,23 @@ const handleAudit = (row, status) => {
 
 const submitAudit = async (row, status, remark = '') => {
     try {
-        await auditWithdraw({ 
-            id: row.id, 
-            status: status,
-            remark: remark 
-        })
-        ElMessage.success('操作成功')
+        // 构建请求参数，根据状态决定是否传递驳回原因
+        const params = {
+            id: row.id,
+            status: status
+        }
+
+        // 只有驳回时才传递驳回原因
+        if (status === 2 && remark) {
+            params.auditMsg = remark
+        }
+
+        await auditWithdraw(params)
+        ElMessage.success(status === 1 ? '审核通过，转账成功' : '已驳回申请')
         fetchData() // 刷新列表
     } catch (error) {
         console.error(error)
+        ElMessage.error(error.response?.data?.message || '操作失败')
     }
 }
 
@@ -162,8 +170,29 @@ onMounted(() => {
   --el-table-header-bg-color: rgba(255, 255, 255, 0.05);
   --el-table-border-color: rgba(255, 255, 255, 0.05);
   --el-table-text-color: #fff;
-  
-  th.el-table__cell { background-color: var(--el-table-header-bg-color) !important; }
+  --el-table-row-hover-bg-color: rgba(64, 158, 255, 0.15);
+
+  th.el-table__cell {
+    background-color: var(--el-table-header-bg-color) !important;
+  }
+
+  /* 优化 hover 效果 */
+  .el-table__body tr:hover > td {
+    background-color: rgba(64, 158, 255, 0.15) !important;
+  }
+
+  .el-table__body tr:hover > td .cell {
+    color: #fff !important;
+  }
+
+  .el-table__body tr:hover > td .el-tag {
+    border-color: rgba(255, 255, 255, 0.3) !important;
+  }
+
+  /* 禁用默认的白色 hover */
+  &.el-table--enable-row-hover .el-table__body tr:hover > td {
+    background-color: rgba(64, 158, 255, 0.15) !important;
+  }
 }
 
 :deep(.el-pagination) {

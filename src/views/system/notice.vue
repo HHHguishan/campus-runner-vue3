@@ -268,7 +268,29 @@ onMounted(() => {
   --el-table-header-bg-color: rgba(255, 255, 255, 0.05);
   --el-table-border-color: rgba(255, 255, 255, 0.05);
   --el-table-text-color: #fff;
-  th.el-table__cell { background-color: var(--el-table-header-bg-color) !important; }
+  --el-table-row-hover-bg-color: rgba(64, 158, 255, 0.15);
+
+  th.el-table__cell {
+    background-color: var(--el-table-header-bg-color) !important;
+  }
+
+  /* 优化 hover 效果 */
+  .el-table__body tr:hover > td {
+    background-color: rgba(64, 158, 255, 0.15) !important;
+  }
+
+  .el-table__body tr:hover > td .cell {
+    color: #fff !important;
+  }
+
+  .el-table__body tr:hover > td .el-tag {
+    border-color: rgba(255, 255, 255, 0.3) !important;
+  }
+
+  /* 禁用默认的白色 hover */
+  &.el-table--enable-row-hover .el-table__body tr:hover > td {
+    background-color: rgba(64, 158, 255, 0.15) !important;
+  }
 }
 
 :deep(.el-tabs__item) {

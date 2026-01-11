@@ -15,6 +15,6 @@ export function auditWithdraw(data) {
   return request({
     url: '/api/admin/withdraw/audit',
     method: 'post',
-    data // { id: 1, status: 1, remark: '...' }
+    data // { id: 1, status: 1, auditMsg: '...' }
   })
 }
