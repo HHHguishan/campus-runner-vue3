@@ -70,6 +70,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { Refresh } from '@element-plus/icons-vue'
 import request from '@/utils/request'
+import { updateRiderStatus } from '@/api/rider'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const loading = ref(false)
@@ -162,10 +163,14 @@ const handleApprove = (row) => {
     cancelButtonText: '取消',
     type: 'success'
   }).then(async () => {
-    await request.post('/api/admin/runner/approve', { runnerId: row.id, auditReason: '审核通过' })
-    ElMessage.success('操作成功')
-    fetchData()
-  })
+    try {
+      await updateRiderStatus({ runnerId: row.id, status: 1 })
+      ElMessage.success('操作成功')
+      fetchData()
+    } catch (error) {
+      console.error(error)
+    }
+  }).catch(() => {})
 }
 
 const handleReject = (row) => {
@@ -175,10 +180,14 @@ const handleReject = (row) => {
     inputPattern: /\S+/,
     inputErrorMessage: '驳回原因不能为空'
   }).then(async ({ value }) => {
-    await request.post('/api/admin/runner/reject', { runnerId: row.id, auditReason: value })
-    ElMessage.success('操作成功')
-    fetchData()
-  })
+    try {
+      await updateRiderStatus({ runnerId: row.id, status: 2, reason: value })
+      ElMessage.success('操作成功')
+      fetchData()
+    } catch (error) {
+      console.error(error)
+    }
+  }).catch(() => {})
 }
 
 onMounted(() => {

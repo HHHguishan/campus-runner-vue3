@@ -19,6 +19,18 @@ const routes = [
         meta: { title: '控制台' }
       },
       {
+        path: 'user/manage',
+        name: 'UserManage',
+        component: () => import('../views/user/manage.vue'),
+        meta: { title: '用户管理' }
+      },
+      {
+        path: 'rider/manage',
+        name: 'RiderManage',
+        component: () => import('../views/rider/manage.vue'),
+        meta: { title: '骑手管理' }
+      },
+      {
         path: 'rider/audit',
         name: 'RiderAudit',
         component: () => import('../views/rider/audit.vue'),

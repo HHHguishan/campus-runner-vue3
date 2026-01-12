@@ -16,6 +16,14 @@
           <el-icon><Menu /></el-icon>
           <span>控制台仪表盘</span>
         </el-menu-item>
+        <el-menu-item index="/user/manage">
+          <el-icon><User /></el-icon>
+          <span>用户管理</span>
+        </el-menu-item>
+        <el-menu-item index="/rider/manage">
+          <el-icon><Bicycle /></el-icon>
+          <span>骑手管理</span>
+        </el-menu-item>
         <el-menu-item index="/rider/audit">
           <el-icon><Stamp /></el-icon>
           <span>骑手审核管理</span>
@@ -76,7 +84,7 @@
 
 <script setup>
 import { useRoute, useRouter } from 'vue-router'
-import { Menu, Stamp, User, List, Money, Setting, Document, Notification } from '@element-plus/icons-vue'
+import { Menu, Stamp, User, List, Money, Setting, Document, Notification, Bicycle } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
