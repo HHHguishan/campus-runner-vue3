@@ -68,13 +68,14 @@ import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { List, Money, User, Warning } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 import gsap from 'gsap'
+import { getDashboardStats } from '@/api/admin'
+import { ElMessage } from 'element-plus'
 
 // DOM Refs
 const lineChartRef = ref(null)
 const pieChartRef = ref(null)
 const barChartRef = ref(null)
 const heatChartRef = ref(null)
-const statCards = ref([])
 
 // Charts instances
 let lineChart = null
@@ -82,150 +83,172 @@ let pieChart = null
 let barChart = null
 let heatChart = null
 
-// Mock Data for Stats
-const stats = [
-  { label: '今日订单', value: '1,284', icon: 'List', color: 'linear-gradient(135deg, #6e45e2 0%, #a18cd1 100%)', trend: 12.5 },
-  { label: '今日营收', value: '4,580', icon: 'Money', color: 'linear-gradient(135deg, #2ecc71 0%, #27ae60 100%)', trend: 8.2 },
-  { label: '活跃骑手', value: '126', icon: 'User', color: 'linear-gradient(135deg, #f1c40f 0%, #f39c12 100%)', trend: -2.4 },
-  { label: '异常订单', value: '3', icon: 'Warning', color: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)', trend: -50.0 }
-]
+// Real Data
+const stats = ref([])
+const loading = ref(false)
+
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const res = await getDashboardStats()
+    if (res.code === 200 && res.data) {
+      const data = res.data
+      
+      // 1. 更新顶部卡片
+      stats.value = data.stats
+      
+      // 2. 更新图表
+      nextTick(() => {
+        updateLineChart(data.lineChart)
+        updatePieChart(data.pieChart)
+        updateBarChart(data.barChart)
+        updateHeatChart(data.heatChart)
+      })
+      
+      // 入场动画
+      gsap.from('.stat-card', { duration: 0.8, y: 30, opacity: 0, stagger: 0.1, ease: 'back.out(1.7)' })
+    }
+  } catch (error) {
+    console.error('获取统计数据失败:', error)
+    ElMessage.error('获取统计数据失败')
+  } finally {
+    loading.value = false
+  }
+}
 
 // ECharts Dark Theme Colors (Element Plus compatible)
 const chartTextColor = '#fff'
 const chartGridColor = 'rgba(255,255,255,0.1)'
 const toolTipBg = 'rgba(0,0,0,0.7)'
 
-const initCharts = () => {
-  // 1. Line Chart (Order Trend)
-  if (lineChartRef.value) {
-    lineChart = echarts.init(lineChartRef.value)
-    lineChart.setOption({
-      tooltip: { trigger: 'axis', backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true, borderColor: chartGridColor },
-      xAxis: {
-        type: 'category',
-        boundaryGap: false,
-        data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
-        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.3)' } },
-        axisLabel: { color: 'rgba(255,255,255,0.7)' }
-      },
-      yAxis: {
-        type: 'value',
-        splitLine: { lineStyle: { color: chartGridColor } },
-        axisLabel: { color: 'rgba(255,255,255,0.7)' }
-      },
-      series: [
-        {
-          name: '订单量',
-          type: 'line',
-          smooth: true,
-          data: [820, 932, 901, 934, 1290, 1330, 1320],
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(110, 69, 226, 0.5)' },
-              { offset: 1, color: 'rgba(110, 69, 226, 0.01)' }
-            ])
-          },
-          itemStyle: { color: '#6e45e2' },
-          lineStyle: { width: 3 }
-        }
-      ]
-    })
-  }
+const updateLineChart = (data) => {
+  if (!lineChartRef.value || !data) return
+  if (!lineChart) lineChart = echarts.init(lineChartRef.value)
+  
+  lineChart.setOption({
+    tooltip: { trigger: 'axis', backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true, borderColor: chartGridColor },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      data: data.categories,
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.3)' } },
+      axisLabel: { color: 'rgba(255,255,255,0.7)' }
+    },
+    yAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: chartGridColor } },
+      axisLabel: { color: 'rgba(255,255,255,0.7)' }
+    },
+    series: [
+      {
+        name: '订单量',
+        type: 'line',
+        smooth: true,
+        data: data.data,
+        areaStyle: {
+          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+            { offset: 0, color: 'rgba(110, 69, 226, 0.5)' },
+            { offset: 1, color: 'rgba(110, 69, 226, 0.01)' }
+          ])
+        },
+        itemStyle: { color: '#6e45e2' },
+        lineStyle: { width: 3 }
+      }
+    ]
+  })
+}
 
-  // 2. Pie Chart (Order Status)
-  if (pieChartRef.value) {
-    pieChart = echarts.init(pieChartRef.value)
-    pieChart.setOption({
-      tooltip: { trigger: 'item', backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
-      legend: { bottom: '0%', left: 'center', textStyle: { color: chartTextColor } },
-      series: [
-        {
-          name: '订单状态',
-          type: 'pie',
-          radius: ['40%', '70%'],
-          avoidLabelOverlap: false,
-          itemStyle: { borderRadius: 10, borderColor: '#1e1e2f', borderWidth: 2 },
-          label: { show: false, position: 'center' },
-          emphasis: { label: { show: true, fontSize: 20, fontWeight: 'bold', color: '#fff' } },
-          data: [
-            { value: 1048, name: '已完成', itemStyle: { color: '#2ecc71' } },
-            { value: 300, name: '配送中', itemStyle: { color: '#3498db' } },
-            { value: 42, name: '异常/取消', itemStyle: { color: '#e74c3c' } },
-            { value: 120, name: '待接单', itemStyle: { color: '#f1c40f' } }
-          ]
-        }
-      ]
-    })
-  }
+const updatePieChart = (data) => {
+  if (!pieChartRef.value || !data) return
+  if (!pieChart) pieChart = echarts.init(pieChartRef.value)
+  
+  pieChart.setOption({
+    tooltip: { trigger: 'item', backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
+    legend: { bottom: '0%', left: 'center', textStyle: { color: chartTextColor } },
+    series: [
+      {
+        name: '订单状态',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        avoidLabelOverlap: false,
+        itemStyle: { borderRadius: 10, borderColor: '#1e1e2f', borderWidth: 2 },
+        label: { show: false, position: 'center' },
+        emphasis: { label: { show: true, fontSize: 16, fontWeight: 'bold', color: '#fff' } },
+        data: data
+      }
+    ]
+  })
+}
 
-  // 3. Bar Chart (Hot Zones)
-  if (barChartRef.value) {
-    barChart = echarts.init(barChartRef.value)
-    barChart.setOption({
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
-      grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-      xAxis: {
-        type: 'value',
-        splitLine: { lineStyle: { color: chartGridColor } },
-        axisLabel: { color: 'rgba(255,255,255,0.7)' }
-      },
-      yAxis: {
-        type: 'category',
-        data: ['行政楼', '图书馆', '女寝A栋', '男寝3号', '二食堂'],
-        axisLine: { lineStyle: { color: 'rgba(255,255,255,0.3)' } },
-        axisLabel: { color: 'rgba(255,255,255,0.7)' }
-      },
-      series: [
-        {
-          name: '单量',
-          type: 'bar',
-          data: [120, 200, 350, 420, 580],
-          itemStyle: {
-            color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
-              { offset: 0, color: '#88d3ce' },
-              { offset: 1, color: '#6e45e2' }
-            ]),
-            borderRadius: [0, 10, 10, 0]
-          }
+const updateBarChart = (data) => {
+  if (!barChartRef.value || !data) return
+  if (!barChart) barChart = echarts.init(barChartRef.value)
+  
+  barChart.setOption({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
+    grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+    xAxis: {
+      type: 'value',
+      splitLine: { lineStyle: { color: chartGridColor } },
+      axisLabel: { color: 'rgba(255,255,255,0.7)' }
+    },
+    yAxis: {
+      type: 'category',
+      data: data.categories,
+      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.3)' } },
+      axisLabel: { color: 'rgba(255,255,255,0.7)' }
+    },
+    series: [
+      {
+        name: '单量',
+        type: 'bar',
+        data: data.data,
+        itemStyle: {
+          color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [
+            { offset: 0, color: '#88d3ce' },
+            { offset: 1, color: '#6e45e2' }
+          ]),
+          borderRadius: [0, 10, 10, 0]
         }
-      ]
-    })
-  }
+      }
+    ]
+  })
+}
 
-  // 4. Line/Bar Mix (Peak Hours)
-  if (heatChartRef.value) {
-    heatChart = echarts.init(heatChartRef.value)
-    heatChart.setOption({
-       tooltip: { trigger: 'axis', backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
-       grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-       xAxis: {
-         type: 'category',
-         data: ['08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'],
-         axisLabel: { color: 'rgba(255,255,255,0.7)' }
+const updateHeatChart = (data) => {
+  if (!heatChartRef.value || !data) return
+  if (!heatChart) heatChart = echarts.init(heatChartRef.value)
+  
+  heatChart.setOption({
+     tooltip: { trigger: 'axis', backgroundColor: toolTipBg, textStyle: { color: '#fff' }, borderWidth: 0 },
+     grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+     xAxis: {
+       type: 'category',
+       data: data.categories,
+       axisLabel: { color: 'rgba(255,255,255,0.7)' }
+     },
+     yAxis: {
+       type: 'value',
+       splitLine: { lineStyle: { color: chartGridColor } },
+       axisLabel: { color: 'rgba(255,255,255,0.7)' }
+     },
+     series: [
+       {
+         name: '接单活跃度',
+         type: 'bar',
+         data: data.activityData,
+         itemStyle: { color: '#f39c12', borderRadius: [5, 5, 0, 0] }
        },
-       yAxis: {
-         type: 'value',
-         splitLine: { lineStyle: { color: chartGridColor } },
-         axisLabel: { color: 'rgba(255,255,255,0.7)' }
-       },
-       series: [
-         {
-           name: '接单活跃度',
-           type: 'bar',
-           data: [20, 50, 180, 80, 60, 210, 150, 90],
-           itemStyle: { color: '#f39c12', borderRadius: [5, 5, 0, 0] }
-         },
-         {
-           name: '平均耗时(分)',
-           type: 'line',
-           yAxisIndex: 0,
-           data: [15, 18, 35, 20, 18, 40, 25, 20],
-           itemStyle: { color: '#e74c3c' }
-         }
-       ]
-    })
-  }
+       {
+         name: '平均耗时(分)',
+         type: 'line',
+         yAxisIndex: 0,
+         data: data.avgTimeData,
+         itemStyle: { color: '#e74c3c' }
+       }
+     ]
+  })
 }
 
 // Window resize handler
@@ -237,14 +260,8 @@ const handleResize = () => {
 }
 
 onMounted(() => {
-  // GSAP Entry Animation
-  gsap.from('.stat-card', { duration: 0.8, y: 30, opacity: 0, stagger: 0.1, ease: 'back.out(1.7)' })
-  gsap.from('.chart-card', { duration: 0.8, y: 50, opacity: 0, stagger: 0.2, delay: 0.3, ease: 'power2.out' })
-
-  nextTick(() => {
-    initCharts()
-    window.addEventListener('resize', handleResize)
-  })
+  fetchData()
+  window.addEventListener('resize', handleResize)
 })
 
 onUnmounted(() => {
